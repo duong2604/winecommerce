@@ -1,16 +1,14 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: winecommerce
+    container_name: win_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: winecommerce
       POSTGRES_PASSWORD: winecommerce
-      POSTGRES_DB: winecommerce
+      POSTGRES_DB: win_db
     ports:
-      - '5432:5432'
+      - '5433:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +19,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: winecommerce
+    container_name: win_redis
     restart: unless-stopped
     command: >
       redis-server
@@ -41,13 +39,20 @@ services:
 
   redis-insight:
     image: redis/redisinsight:latest
-    container_name: winecommerce
+    container_name: win_redis_insight
     restart: unless-stopped
     ports:
       - '8001:5540'
     depends_on:
       - redis
 
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: mailhog_server
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP port
+      - '8025:8025' # Web UI
 volumes:
   postgres_data:
   redis_data:
