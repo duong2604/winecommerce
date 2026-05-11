@@ -11,7 +11,7 @@ export class MailService {
       template: './otp', // src/mail/templates/otp.hbs
       context: {
         otp,
-        expiredIn: '5 minutes',
+        expiresIn: '5 minutes',
       },
     });
   }
