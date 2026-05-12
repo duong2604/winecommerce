@@ -1,5 +1,6 @@
 import { UserStatus } from '@generated/prisma/enums';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -17,6 +18,7 @@ import { REDIS_CLIENT } from '../redis/redis.module';
 import Redis from 'ioredis';
 import { RegisterDto } from './dto/register.dto';
 import { MailService } from '../mail/mail.service';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
 
 @Injectable()
 export class AuthService {
@@ -78,6 +80,29 @@ export class AuthService {
     return {
       message: 'Register successfully! Please check your email!',
       email: user.email,
+    };
+  }
+
+  async verifyOtp(dto: VerifyOtpDto) {
+    const storedOtp = await this.redis.get(`otp:${dto.email}`);
+
+    if (!storedOtp) {
+      throw new BadRequestException('Your Otp expired or not existed!');
+    }
+
+    if (dto.otp !== storedOtp) {
+      throw new BadRequestException('Your otp is not matched!');
+    }
+
+    const user = await this.userService.findByEmail(dto.email);
+    if (!user) {
+      throw new BadRequestException('User does not exist!');
+    }
+
+    await this.userService.update(user.id, UserStatus.ACTIVE);
+    await this.redis.del(`otp:${dto.email}`);
+    return {
+      message: 'Verified successfully!',
     };
   }
 
