@@ -8,17 +8,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcrypt';
-import { Response } from 'express';
+import type { Request, Response } from 'express';
+import Redis from 'ioredis';
+import { MailService } from '../mail/mail.service';
+import { REDIS_CLIENT } from '../redis/redis.module';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
-import { JwtPayload } from './strategies/access-token.strategy';
-import { JwtService } from '@nestjs/jwt';
-import { REDIS_CLIENT } from '../redis/redis.module';
-import Redis from 'ioredis';
 import { RegisterDto } from './dto/register.dto';
-import { MailService } from '../mail/mail.service';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { JwtPayload } from './strategies/access-token.strategy';
 
 @Injectable()
 export class AuthService {
@@ -109,26 +109,31 @@ export class AuthService {
   async login(dto: LoginDto, res: Response) {
     const user = await this.userService.findByEmail(dto.email);
     if (!user) {
-      throw new UnauthorizedException('Email or password is not exact');
+      throw new UnauthorizedException('Your email or password is not exact!');
     }
+
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Email or password is not exact');
+      throw new UnauthorizedException('Your email or password is not exact!');
     }
 
     if (user.status === UserStatus.UNVERIFIED) {
-      throw new ForbiddenException('Please verify your email before log in');
+      throw new ForbiddenException('Please verify  your account');
     }
+
     if (user.status === UserStatus.BANNED) {
-      throw new ForbiddenException('Your account was locked!');
+      throw new ForbiddenException('Your account  was banned!');
     }
 
     const { accessToken, refreshToken } = await this.generateTokens(
       user.id,
-      user.email,
+      dto.email,
     );
+
+    // Set refresh token to redis
     await this.saveRefreshToken(user.id, refreshToken);
 
+    // Set cookies
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
       secure: this.config.get('NODE_ENV') === 'production',
@@ -136,6 +141,47 @@ export class AuthService {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    return { accessToken };
+    return {
+      accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
+    };
+  }
+
+  async refreshTokens(
+    req: Request & { user?: JwtPayload & { refreshToken: string } },
+  ) {
+    const userFromReq = req.user;
+    if (!userFromReq) {
+      throw new UnauthorizedException(
+        'Your session expired, please login again!',
+      );
+    }
+
+    const { sub: userId, refreshToken } = userFromReq;
+
+    const storedToken = await this.redis.get(`refresh:${userId}`);
+    if (!storedToken) {
+      throw new UnauthorizedException(
+        'Your session expired, please login again!',
+      );
+    }
+
+    if (storedToken !== refreshToken) {
+      throw new UnauthorizedException('Refresh token is invalid!');
+    }
+
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('User does not exist!');
+    }
+
+    const tokens = await this.generateTokens(userId, user.email);
+
+    return { accessToken: tokens.accessToken };
   }
 }
