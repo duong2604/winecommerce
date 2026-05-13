@@ -10,11 +10,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcrypt';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import Redis from 'ioredis';
 import { MailService } from '../mail/mail.service';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { UsersService } from '../users/users.service';
+import { AccessRequest, RefreshRequest } from './auth.controller';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -152,9 +153,7 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(
-    req: Request & { user?: JwtPayload & { refreshToken: string } },
-  ) {
+  async refreshTokens(req: RefreshRequest) {
     const userFromReq = req.user;
     if (!userFromReq) {
       throw new UnauthorizedException(
@@ -183,5 +182,22 @@ export class AuthService {
     const tokens = await this.generateTokens(userId, user.email);
 
     return { accessToken: tokens.accessToken };
+  }
+
+  async logout(req: AccessRequest, res: Response) {
+    const userFromReq = req.user;
+    if (!userFromReq) {
+      throw new UnauthorizedException(
+        'Your session expired, please login again!',
+      );
+    }
+    await this.redis.del(`refresh:${userFromReq.id}`);
+
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      sameSite: 'strict',
+      maxAge: 0,
+    });
+    return { message: 'You logged out!' };
   }
 }

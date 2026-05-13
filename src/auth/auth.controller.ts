@@ -16,10 +16,14 @@ import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { JwtPayload } from './strategies/access-token.strategy';
+import { AccessTokenGuard } from './guards/access-token.guard';
+import { User } from '@generated/prisma/client';
 
-type RefreshRequest = Request & {
+export type RefreshRequest = Request & {
   user?: JwtPayload & { refreshToken: string };
 };
+
+export type AccessRequest = Request & { user?: User };
 
 @Controller('auth')
 export class AuthController {
@@ -49,5 +53,12 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   refresh(@Req() req: RefreshRequest) {
     return this.authService.refreshTokens(req);
+  }
+
+  @Post('logout')
+  @UseGuards(AccessTokenGuard)
+  @HttpCode(HttpStatus.OK)
+  logout(@Req() req: AccessRequest, @Res() res: Response) {
+    return this.authService.logout(req, res);
   }
 }
