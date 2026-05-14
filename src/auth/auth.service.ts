@@ -20,6 +20,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { JwtPayload } from './strategies/access-token.strategy';
+import _ from 'lodash';
 
 @Injectable()
 export class AuthService {
@@ -199,5 +200,15 @@ export class AuthService {
       maxAge: 0,
     });
     return { message: 'You logged out!' };
+  }
+
+  async getMe(req: AccessRequest) {
+    const { id } = req.user!;
+    const user = await this.userService.findById(id);
+    if (!user) {
+      throw new BadRequestException('Not found user!');
+    }
+    const userWithoutPassword = _.omit(user, ['password']);
+    return userWithoutPassword;
   }
 }

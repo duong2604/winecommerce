@@ -61,4 +61,11 @@ export class AuthController {
   logout(@Req() req: AccessRequest, @Res() res: Response) {
     return this.authService.logout(req, res);
   }
+
+  @Get('me')
+  @UseGuards(AccessTokenGuard)
+  @HttpCode(HttpStatus.OK)
+  getMe(@Req() req: AccessRequest) {
+    return this.authService.getMe(req);
+  }
 }
