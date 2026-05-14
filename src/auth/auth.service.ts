@@ -196,8 +196,8 @@ export class AuthService {
 
     res.clearCookie('refresh_token', {
       httpOnly: true,
+      secure: this.config.get('NODE_ENV') === 'production',
       sameSite: 'strict',
-      maxAge: 0,
     });
     return { message: 'You logged out!' };
   }
