@@ -7,11 +7,13 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { randomInt } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcrypt';
 import type { Response } from 'express';
 import Redis from 'ioredis';
+import _ from 'lodash';
 import { MailService } from '../mail/mail.service';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { UsersService } from '../users/users.service';
@@ -20,7 +22,6 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { JwtPayload } from './strategies/access-token.strategy';
-import _ from 'lodash';
 
 @Injectable()
 export class AuthService {
@@ -33,7 +34,7 @@ export class AuthService {
   ) {}
 
   private generateOtp(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return randomInt(100000, 1000000).toString();
   }
 
   private async generateTokens(userId: string, email: string) {
@@ -52,9 +53,29 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  private get refreshTtlSeconds(): number {
+    return parseInt(
+      this.config.get('REFRESH_TOKEN_TTL_SECONDS') ?? '604800',
+      10,
+    );
+  }
+
   private async saveRefreshToken(userId: string, refreshToken: string) {
-    const ttlSeconds = 7 * 24 * 60 * 60;
-    await this.redis.set(`refresh:${userId}`, refreshToken, 'EX', ttlSeconds);
+    await this.redis.set(
+      `refresh:${userId}`,
+      refreshToken,
+      'EX',
+      this.refreshTtlSeconds,
+    );
+  }
+
+  private setRefreshCookie(res: Response, refreshToken: string) {
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: this.config.get('NODE_ENV') === 'production',
+      sameSite: 'strict',
+      maxAge: this.refreshTtlSeconds * 1000,
+    });
   }
 
   async register(dto: RegisterDto) {
@@ -120,11 +141,11 @@ export class AuthService {
     }
 
     if (user.status === UserStatus.UNVERIFIED) {
-      throw new ForbiddenException('Please verify  your account');
+      throw new ForbiddenException('Please verify your account');
     }
 
     if (user.status === UserStatus.BANNED) {
-      throw new ForbiddenException('Your account  was banned!');
+      throw new ForbiddenException('Your account was banned!');
     }
 
     const { accessToken, refreshToken } = await this.generateTokens(
@@ -132,16 +153,8 @@ export class AuthService {
       dto.email,
     );
 
-    // Set refresh token to redis
     await this.saveRefreshToken(user.id, refreshToken);
-
-    // Set cookies
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: this.config.get('NODE_ENV') === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    this.setRefreshCookie(res, refreshToken);
 
     return {
       accessToken,
@@ -208,7 +221,6 @@ export class AuthService {
     if (!user) {
       throw new BadRequestException('Not found user!');
     }
-    const userWithoutPassword = _.omit(user, ['password']);
-    return userWithoutPassword;
+    return _.omit(user, ['password']);
   }
 }

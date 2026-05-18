@@ -14,8 +14,22 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3001')
+    .split(',')
+    .map((o) => o.trim());
+
   app.enableCors({
-    origin: '*',
+    origin: (
+      origin: string,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
     credentials: true,
   });
   await app.listen(process.env.PORT ?? 3000);
